@@ -1,0 +1,71 @@
+name: Generate TTS for STEMaths Lesson
+
+on:
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: 'Language code (e.g., ewe, twi, ga, hausa)'
+        required: true
+        default: 'ewe'
+      grade:
+        description: 'Grade level (e.g., 3)'
+        required: true
+        default: '3'
+      lesson_number:
+        description: 'Lesson number (e.g., 01)'
+        required: true
+        default: '01'
+
+jobs:
+  generate-tts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure audio output folder exists
+        run: |
+          mkdir -p content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/audio
+
+      - name: Install Python and TTS dependencies
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install gTTS
+
+      - name: Generate TTS audio from lesson
+        run: |
+          source venv/bin/activate
+          LESSON_PATH="content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/lesson-${{ inputs.lesson_number }}.md"
+          AUDIO_PATH="content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/audio/lesson-${{ inputs.lesson_number }}.mp3"
+
+          if [ ! -f "$LESSON_PATH" ]; then
+            echo "❌ Lesson file not found: $LESSON_PATH"
+            exit 1
+          fi
+
+          python3 - <<EOF
+from gtts import gTTS
+
+lang = "${{ inputs.lang }}"
+lesson_path = "${LESSON_PATH}"
+audio_path = "${AUDIO_PATH}"
+
+with open(lesson_path, "r", encoding="utf-8") as f:
+    text = f.read()
+
+tts = gTTS(text, lang=lang if lang != "ewe" else "en")
+tts.save(audio_path)
+print(f"✅ Audio saved to {audio_path}")
+EOF
+
+      - name: Commit and push TTS file
+        run: |
+          git config --local user.name "stemaths-bot"
+          git config --local user.email "bot@stemaths.org"
+          git add content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/audio/lesson-${{ inputs.lesson_number }}.mp3
+          git commit -m "chore: add TTS for ${{ inputs.lang }} Grade ${{ inputs.grade }} Lesson ${{ inputs.lesson_number }}"
+          git push
