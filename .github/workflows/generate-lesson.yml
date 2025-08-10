@@ -1,20 +1,19 @@
-name: Generate Lesson
+name: Generate Lesson Plan
 
 on:
   workflow_dispatch:
     inputs:
+      lang:
+        description: "Language code (e.g., en, fr, es)"
+        required: true
+        default: "en"
+      grade:
+        description: "Grade level (e.g., 1, 2, 3)"
+        required: true
+        default: "1"
       topic:
         description: "Lesson topic"
         required: true
-        default: "Introduction to Fractions"
-      grade:
-        description: "Target grade level"
-        required: true
-        default: "Grade 3"
-      language:
-        description: "Language for the lesson"
-        required: true
-        default: "English"
 
 jobs:
   generate-lesson:
@@ -23,38 +22,46 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
-      - name: Set up content folder
-        run: mkdir -p content/lessons
+      - name: Ensure folder exists and add README.md
+        run: |
+          mkdir -p content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}
+          if [ ! -f content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/README.md ]; then
+            echo "# Lessons for Grade ${{ inputs.grade }} in ${{ inputs.lang }}" > content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/README.md
+          fi
 
-      - name: Generate lesson with OpenAI
+      - name: Commit README.md if new
+        run: |
+          git config user.name "stemaths-bot"
+          git config user.email "bot@stemaths.org"
+          git add content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/README.md
+          git commit -m "chore: add README.md for ${{ inputs.lang }} grade-${{ inputs.grade }} folder" || echo "No changes to commit"
+          git push
+
+      - name: Generate lesson plan with OpenAI
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          FILENAME="content/lessons/lesson-$(date +%Y-%m-%d-%H-%M-%S).md"
-          PROMPT="Create a detailed, engaging, and age-appropriate lesson plan on the topic: '${{ github.event.inputs.topic }}' for ${{ github.event.inputs.grade }} students in ${{ github.event.inputs.language }}. Include objectives, materials, activities, and an assessment section."
-
-          RESPONSE=$(curl https://api.openai.com/v1/chat/completions \
+          lesson_file="content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/$(date +%Y-%m-%d)-${{ inputs.topic// /_ }}.md"
+          response=$(curl https://api.openai.com/v1/chat/completions \
             -s \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OPENAI_API_KEY" \
-            -d "{
-              \"model\": \"gpt-4o-mini\",
-              \"messages\": [
-                {\"role\": \"system\", \"content\": \"You are an expert lesson plan generator.\"},
-                {\"role\": \"user\", \"content\": \"$PROMPT\"}
+            -d '{
+              "model": "gpt-4o-mini",
+              "messages": [
+                {"role": "system", "content": "You are a helpful assistant generating structured lesson plans."},
+                {"role": "user", "content": "Generate a detailed lesson plan for grade '"${{ inputs.grade }}"' in '"${{ inputs.lang }}"' on the topic: '"${{ inputs.topic }}"'."}
               ],
-              \"max_tokens\": 1200
-            }" | jq -r '.choices[0].message.content')
+              "temperature": 0.7
+            }' | jq -r '.choices[0].message.content')
 
-          echo "$RESPONSE" > "$FILENAME"
+          echo "$response" > "$lesson_file"
 
-      - name: Commit and push lesson
+      - name: Commit lesson plan
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add content/lessons/*.md
-          git commit -m "Add new generated lesson: ${{ github.event.inputs.topic }}"
+          git config user.name "stemaths-bot"
+          git config user.email "bot@stemaths.org"
+          git add content/lessons/${{ inputs.lang }}/grade-${{ inputs.grade }}/*.md
+          git commit -m "feat: add lesson for ${{ inputs.topic }} (Grade ${{ inputs.grade }}, ${{ inputs.lang }})" || echo "No changes to commit"
           git push
