@@ -29,7 +29,7 @@ jobs:
       - name: Run Gemini CLI to generate lesson
         uses: google-github-actions/run-gemini-cli@v0.1.10
         with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_api_key: ${{ secrets.AIzaSyC6E_h2BctP7wUu-HMOHwx95_T7zb1aLOU }}
           prompt: |
             You are an instructional designer for STEMaths.
             Create ONE math lesson for Grade {{ inputs.grade }} students
