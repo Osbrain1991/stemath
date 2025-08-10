@@ -26,24 +26,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Create lesson folder structure
+        run: |
+          mkdir -p content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}
+
       - name: Run Gemini CLI to generate lesson
         uses: google-github-actions/run-gemini-cli@v0.1.10
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
             You are an instructional designer for STEMaths.
-            Create ONE math lesson for Grade {{ inputs.grade }} students
-            in the {{ inputs.lang }} language on the topic "{{ inputs.topic }}".
+            Create ONE math lesson for Grade ${{ github.event.inputs.grade }} students
+            in the ${{ github.event.inputs.lang }} language on the topic "${{ github.event.inputs.topic }}".
             Follow the exact markdown lesson structure described in GEMINI.md.
             Save the file to:
-            content/lessons/{{ inputs.lang }}/grade-{{ inputs.grade }}/lesson-01.md
+            content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.md
           settings: |
             {
               "commit": {
                 "enabled": true,
                 "name": "stemaths-bot",
                 "email": "bot@stemaths.org",
-                "message": "chore: add {{ inputs.lang }} Grade {{ inputs.grade }} lesson on {{ inputs.topic }}"
+                "message": "chore: add ${{ github.event.inputs.lang }} Grade ${{ github.event.inputs.grade }} lesson on ${{ github.event.inputs.topic }}"
               },
               "tools": { "fs": true, "git": true }
             }
