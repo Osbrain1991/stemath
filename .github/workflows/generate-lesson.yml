@@ -1,13 +1,14 @@
-name: Generate Lesson with Audio
+name: Generate STEMaths Lesson with TTS
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # run manually
   schedule:
-    - cron: '0 9 * * *' # every day at 9am UTC
+    - cron: "0 9 * * 1" # every Monday at 9 AM UTC
 
 jobs:
-  build:
+  generate-lesson-and-tts:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -17,34 +18,64 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Gemini CLI
-        run: npm install -g @google/generative-ai-cli
+      - name: Install dependencies
+        run: npm install @google/generative-ai gtts
 
-      - name: Authenticate Gemini CLI
-        run: |
-          echo "${{ secrets.GEMINI_API_KEY }}" > .gemini_api_key
-          export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
-
-      - name: Create content folder
+      - name: Create content/lessons directory if not exists
         run: mkdir -p content/lessons
 
-      - name: Generate lesson and save to file
+      - name: Generate lesson with Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          gemini prompt "Create a STEMaths lesson on fractions in Ewe language." > content/lessons/lesson.md
+          node <<'EOF'
+          import fs from 'fs';
+          import path from 'path';
+          import { GoogleGenerativeAI } from '@google/generative-ai';
 
-      - name: Generate TTS audio from lesson
+          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+          const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+          async function generateLesson() {
+            const prompt = "Create a simple STEMaths lesson in markdown format on fractions for junior high school.";
+            const result = await model.generateContent(prompt);
+            const lessonText = result.response.text();
+
+            const lessonPath = path.join('content', 'lessons', 'lesson.md');
+            fs.writeFileSync(lessonPath, lessonText);
+            console.log(`✅ Lesson saved to ${lessonPath}`);
+          }
+
+          generateLesson();
+          EOF
+
+      - name: Generate TTS from lesson
         run: |
-          npm install -g @google-cloud/text-to-speech-cli
-          gcloud auth activate-service-account --key-file=<(echo "${{ secrets.GOOGLE_CLOUD_KEY }}")
-          text-to-speech-cli \
-            --input-file content/lessons/lesson.md \
-            --voice "en-US-Wavenet-D" \
-            --output-file content/lessons/lesson.mp3
+          node <<'EOF'
+          import fs from 'fs';
+          import path from 'path';
+          import gTTS from 'gtts';
 
-      - name: Commit and push changes
+          const lessonPath = path.join('content', 'lessons', 'lesson.md');
+          if (!fs.existsSync(lessonPath)) {
+            console.error("❌ Lesson file not found, cannot generate TTS.");
+            process.exit(1);
+          }
+
+          const text = fs.readFileSync(lessonPath, 'utf8');
+          const tts = new gTTS(text, 'en');
+
+          const audioPath = path.join('content', 'lessons', 'lesson.mp3');
+          tts.save(audioPath, function (err) {
+            if (err) { throw err; }
+            console.log(`✅ Audio saved to ${audioPath}`);
+          });
+          EOF
+
+      - name: Commit lesson and audio
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
           git add content/lessons/lesson.md content/lessons/lesson.mp3
-          git commit -m "Add new lesson with audio"
+          git commit -m "Add new STEMaths lesson and audio" || echo "No changes to commit"
           git push
