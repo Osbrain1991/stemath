@@ -1,57 +1,50 @@
-name: Generate Localized STEMaths Lesson
+name: Generate Lesson with Audio
 
 on:
   workflow_dispatch:
-    inputs:
-      lang:
-        description: 'Language code (e.g., ewe, twi, ga, hausa)'
-        required: true
-        default: 'ewe'
-      grade:
-        description: 'Grade level (e.g., 3)'
-        required: true
-        default: '3'
-      topic:
-        description: 'Math topic (e.g., Addition, Fractions)'
-        required: true
-        default: 'Addition'
+  schedule:
+    - cron: '0 9 * * *' # every day at 9am UTC
 
 jobs:
-  generate-lesson:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          persist-credentials: true
+          node-version: '20'
 
-      - name: Run Gemini CLI to generate lesson
-        uses: google-github-actions/run-gemini-cli@v0.1.10
-        with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          prompt: |
-            You are an instructional designer for STEMaths.
-            Create ONE math lesson for Grade {{ inputs.grade }} students on the topic "{{ inputs.topic }}" in {{ inputs.lang }}.
-            Follow the exact format described in the GEMINI.md file in this repository.
-            Save the lesson as:
-            content/lessons/{{ inputs.lang }}/grade-{{ inputs.grade }}/lesson-01.md
-            Do not overwrite any existing lessons unless instructed.
-            Make sure all explanations and vocabulary are in {{ inputs.lang }}, but math notation remains in English/numbers.
+      - name: Install Gemini CLI
+        run: npm install -g @google/generative-ai-cli
 
-          settings: |
-            {
-              "tools": {
-                "fs": true
-              }
-            }
-
-      - name: Commit and push generated lesson
+      - name: Authenticate Gemini CLI
         run: |
-          git config --global user.name "stemaths-bot"
-          git config --global user.email "bot@stemaths.org"
-          git add content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.md
-          git commit -m "chore: add ${{ github.event.inputs.lang }} Grade ${{ github.event.inputs.grade }} lesson on ${{ github.event.inputs.topic }}"
+          echo "${{ secrets.GEMINI_API_KEY }}" > .gemini_api_key
+          export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+
+      - name: Create content folder
+        run: mkdir -p content/lessons
+
+      - name: Generate lesson and save to file
+        run: |
+          gemini prompt "Create a STEMaths lesson on fractions in Ewe language." > content/lessons/lesson.md
+
+      - name: Generate TTS audio from lesson
+        run: |
+          npm install -g @google-cloud/text-to-speech-cli
+          gcloud auth activate-service-account --key-file=<(echo "${{ secrets.GOOGLE_CLOUD_KEY }}")
+          text-to-speech-cli \
+            --input-file content/lessons/lesson.md \
+            --voice "en-US-Wavenet-D" \
+            --output-file content/lessons/lesson.mp3
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add content/lessons/lesson.md content/lessons/lesson.mp3
+          git commit -m "Add new lesson with audio"
           git push
