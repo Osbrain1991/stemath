@@ -1,19 +1,23 @@
-name: Generate TTS Audio from STEMaths Lesson
+name: Generate Localized STEMaths Lesson
 
 on:
   workflow_dispatch:
     inputs:
-      lesson_path:
-        description: 'Path to the lesson markdown file (e.g., content/lessons/ewe/grade-3/lesson-01.md)'
-        required: true
-        default: 'content/lessons/ewe/grade-3/lesson-01.md'
       lang:
         description: 'Language code (e.g., ewe, twi, ga, hausa)'
         required: true
         default: 'ewe'
+      grade:
+        description: 'Grade level (e.g., 3)'
+        required: true
+        default: '3'
+      topic:
+        description: 'Math topic (e.g., Addition, Fractions)'
+        required: true
+        default: 'Addition'
 
 jobs:
-  generate-tts:
+  generate-lesson:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,53 +26,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
-          pip install google-genai
+      - name: Run Gemini CLI to generate lesson
+        uses: google-github-actions/run-gemini-cli@v0.1.10
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are an instructional designer for STEMaths.
+            Create ONE math lesson for Grade {{ inputs.grade }} students on the topic "{{ inputs.topic }}" in {{ inputs.lang }}.
+            Follow the exact format described in the GEMINI.md file in this repository.
+            Save the lesson as:
+            content/lessons/{{ inputs.lang }}/grade-{{ inputs.grade }}/lesson-01.md
+            Do not overwrite any existing lessons unless instructed.
+            Make sure all explanations and vocabulary are in {{ inputs.lang }}, but math notation remains in English/numbers.
 
-      - name: Run TTS generation script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python3 <<'EOF'
-          import os
-          from pathlib import Path
-          from google import genai
+          settings: |
+            {
+              "commit": {
+                "enabled": false
+              },
+              "tools": {
+                "fs": true
+              }
+            }
 
-          lesson_path = Path("${{ github.event.inputs.lesson_path }}")
+      - name: Generate TTS audio file from lesson
+        run: |
+          mkdir -p content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}
+          # Install required TTS package
+          pip install gtts
+          python - <<'PYCODE'
+          from gtts import gTTS
+          import pathlib
           lang = "${{ github.event.inputs.lang }}"
+          grade = "${{ github.event.inputs.grade }}"
+          lesson_file = pathlib.Path(f"content/lessons/{lang}/grade-{grade}/lesson-01.md")
+          audio_file = pathlib.Path(f"content/lessons/{lang}/grade-{grade}/lesson-01.mp3")
+          text = lesson_file.read_text(encoding="utf-8")
+          tts = gTTS(text=text, lang="en")  # Replace 'en' with actual TTS language code if available
+          tts.save(audio_file)
+          PYCODE
 
-          # Where audio will be stored
-          audio_dir = Path(f"assets/audio/{lang}")
-          audio_dir.mkdir(parents=True, exist_ok=True)
-
-          # Read lesson text
-          with open(lesson_path, "r", encoding="utf-8") as f:
-              lesson_text = f.read()
-
-          # Init Gemini client
-          client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-          # Generate speech
-          print(f"Generating TTS for {lesson_path}...")
-          response = client.models.generate_speech(
-              model="gemini-2.5-flash-tts",  # or latest TTS model
-              input=f"Read aloud the following lesson in {lang}:\n\n{lesson_text}"
-          )
-
-          audio_file = audio_dir / (lesson_path.stem + ".mp3")
-          with open(audio_file, "wb") as f:
-              f.write(response.audio)
-
-          print(f"TTS saved to {audio_file}")
-          EOF
-
-      - name: Commit audio file
+      - name: Commit lesson text and audio
         run: |
-          git config --global user.name "stemaths-bot"
-          git config --global user.email "bot@stemaths.org"
-          git add assets/audio
-          git commit -m "chore: add TTS audio for ${{ github.event.inputs.lesson_path }}"
+          git config user.name "stemaths-bot"
+          git config user.email "bot@stemaths.org"
+          git add content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.md
+          git add content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.mp3
+          git commit -m "chore: add ${{ github.event.inputs.lang }} Grade ${{ github.event.inputs.grade }} lesson on ${{ github.event.inputs.topic }} with audio"
           git push
