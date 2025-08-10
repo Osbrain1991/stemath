@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       lesson_path:
-        description: 'Path to the lesson markdown file (e.g., content/lessons/ewe/grade-3/lesson-01.md)'
+        description: 'content/lessons/ewe/grade-3/lesson-01.md'
         required: true
         default: 'content/lessons/ewe/grade-3/lesson-01.md'
       lang:
