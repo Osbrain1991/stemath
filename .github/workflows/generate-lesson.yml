@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Run Gemini CLI to generate lesson
         uses: google-github-actions/run-gemini-cli@v0.1.10
@@ -41,14 +43,15 @@ jobs:
 
           settings: |
             {
-              "commit": {
-                "enabled": true,
-                "name": "stemaths-bot",
-                "email": "bot@stemaths.org",
-                "message": "chore: add {{ inputs.lang }} Grade {{ inputs.grade }} lesson on {{ inputs.topic }}"
-              },
               "tools": {
-                "fs": true,
-                "git": true
+                "fs": true
               }
             }
+
+      - name: Commit and push generated lesson
+        run: |
+          git config --global user.name "stemaths-bot"
+          git config --global user.email "bot@stemaths.org"
+          git add content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.md
+          git commit -m "chore: add ${{ github.event.inputs.lang }} Grade ${{ github.event.inputs.grade }} lesson on ${{ github.event.inputs.topic }}"
+          git push
