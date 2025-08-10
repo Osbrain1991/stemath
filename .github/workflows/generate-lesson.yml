@@ -1,55 +1,60 @@
-name: Generate Localized STEMaths Lesson
+name: Generate Lesson
 
 on:
   workflow_dispatch:
     inputs:
-      lang:
-        description: 'Language code (e.g., ewe, twi, ga, hausa)'
-        required: true
-        default: 'ewe'
-      grade:
-        description: 'Grade level (e.g., 3)'
-        required: true
-        default: '3'
       topic:
-        description: 'Math topic (e.g., Addition, Fractions)'
+        description: "Lesson topic"
         required: true
-        default: 'Addition'
+        default: "Introduction to Fractions"
+      grade:
+        description: "Target grade level"
+        required: true
+        default: "Grade 3"
+      language:
+        description: "Language for the lesson"
+        required: true
+        default: "English"
 
 jobs:
   generate-lesson:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run Gemini CLI to generate lesson
-        uses: google-github-actions/run-gemini-cli@v0.1.10
+        uses: actions/checkout@v3
         with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          prompt: |
-            You are an instructional designer for STEMaths.
-            Create ONE math lesson for Grade {{ inputs.grade }} students on the topic "{{ inputs.topic }}" in {{ inputs.lang }}.
-            Follow the exact format described in the GEMINI.md file in this repository.
-            Save the lesson as:
-            content/lessons/{{ inputs.lang }}/grade-{{ inputs.grade }}/lesson-01.md
-            Do not overwrite any existing lessons unless instructed.
-            Make sure all explanations and vocabulary are in {{ inputs.lang }}, but math notation remains in English/numbers.
+          fetch-depth: 0
 
-          settings: |
-            {
-              "commit": {
-                "enabled": true,
-                "name": "stemaths-bot",
-                "email": "bot@stemaths.org",
-                "message": "chore: add {{ inputs.lang }} Grade {{ inputs.grade }} lesson on {{ inputs.topic }}"
-              },
-              "tools": {
-                "fs": true,
-                "git": true
-              }
-            }
+      - name: Set up content folder
+        run: mkdir -p content/lessons
 
+      - name: Generate lesson with OpenAI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          FILENAME="content/lessons/lesson-$(date +%Y-%m-%d-%H-%M-%S).md"
+          PROMPT="Create a detailed, engaging, and age-appropriate lesson plan on the topic: '${{ github.event.inputs.topic }}' for ${{ github.event.inputs.grade }} students in ${{ github.event.inputs.language }}. Include objectives, materials, activities, and an assessment section."
+
+          RESPONSE=$(curl https://api.openai.com/v1/chat/completions \
+            -s \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -d "{
+              \"model\": \"gpt-4o-mini\",
+              \"messages\": [
+                {\"role\": \"system\", \"content\": \"You are an expert lesson plan generator.\"},
+                {\"role\": \"user\", \"content\": \"$PROMPT\"}
+              ],
+              \"max_tokens\": 1200
+            }" | jq -r '.choices[0].message.content')
+
+          echo "$RESPONSE" > "$FILENAME"
+
+      - name: Commit and push lesson
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add content/lessons/*.md
+          git commit -m "Add new generated lesson: ${{ github.event.inputs.topic }}"
+          git push
