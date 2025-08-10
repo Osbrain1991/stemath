@@ -30,6 +30,10 @@ jobs:
         run: |
           mkdir -p content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}
 
+      - name: Set lesson filename
+        id: set_filename
+        run: echo "filename=lesson-$(date +'%Y%m%d-%H%M%S').md" >> $GITHUB_ENV
+
       - name: Run Gemini CLI to generate lesson
         uses: google-github-actions/run-gemini-cli@v0.1.10
         with:
@@ -40,7 +44,7 @@ jobs:
             in the ${{ github.event.inputs.lang }} language on the topic "${{ github.event.inputs.topic }}".
             Follow the exact markdown lesson structure described in GEMINI.md.
             Save the file to:
-            content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/lesson-01.md
+            content/lessons/${{ github.event.inputs.lang }}/grade-${{ github.event.inputs.grade }}/${{ env.filename }}
           settings: |
             {
               "commit": {
