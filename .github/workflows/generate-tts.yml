@@ -1,74 +1,55 @@
-name: Generate TTS Audio from STEMaths Lesson
+name: Generate TTS for Lessons
 
 on:
-  workflow_dispatch:
-    inputs:
-      lesson_path:
-        description: 'content/lessons/ewe/grade-3/lesson-01.md'
-        required: true
-        default: 'content/lessons/ewe/grade-3/lesson-01.md'
-      lang:
-        description: 'Language code (e.g., ewe, twi, ga, hausa)'
-        required: true
-        default: 'ewe'
+  push:
+    paths:
+      - "lessons/*.txt"
 
 jobs:
-  generate-tts:
+  tts:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
-          pip install google-genai
+        run: pip install openai
 
-      - name: Run TTS generation script
+      - name: Generate TTS from lesson
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python3 <<'EOF'
           import os
-          from pathlib import Path
-          from google import genai
+          import openai
+          import glob
 
-          lesson_path = Path("${{ github.event.inputs.lesson_path }}")
-          lang = "${{ github.event.inputs.lang }}"
+          openai.api_key = os.environ["OPENAI_API_KEY"]
 
-          # Where audio will be stored
-          audio_dir = Path(f"assets/audio/{lang}")
-          audio_dir.mkdir(parents=True, exist_ok=True)
+          for file_path in glob.glob("lessons/*.txt"):
+              with open(file_path, "r") as f:
+                  text_content = f.read()
 
-          # Read lesson text
-          with open(lesson_path, "r", encoding="utf-8") as f:
-              lesson_text = f.read()
+              mp3_file = file_path.replace(".txt", ".mp3")
 
-          # Init Gemini client
-          client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+              with open(mp3_file, "wb") as audio_file:
+                  response = openai.audio.speech.create(
+                      model="gpt-4o-mini-tts",
+                      voice="alloy",
+                      input=text_content
+                  )
+                  audio_file.write(response.data)
 
-          # Generate speech
-          print(f"Generating TTS for {lesson_path}...")
-          response = client.models.generate_speech(
-              model="gemini-2.5-flash-tts",  # or latest TTS model
-              input=f"Read aloud the following lesson in {lang}:\n\n{lesson_text}"
-          )
+              print(f"Generated: {mp3_file}")
 
-          audio_file = audio_dir / (lesson_path.stem + ".mp3")
-          with open(audio_file, "wb") as f:
-              f.write(response.audio)
-
-          print(f"TTS saved to {audio_file}")
-          EOF
-
-      - name: Commit audio file
+      - name: Commit and push MP3 files
         run: |
-          git config --global user.name "stemaths-bot"
-          git config --global user.email "bot@stemaths.org"
-          git add assets/audio
-          git commit -m "chore: add TTS audio for ${{ github.event.inputs.lesson_path }}"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add lessons/*.mp3
+          git commit -m "Add generated TTS audio"
           git push
